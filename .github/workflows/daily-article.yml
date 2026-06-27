@@ -28,14 +28,14 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Install Anthropic SDK
+        run: npm install @anthropic-ai/sdk@^0.32.1 --no-audit --no-fund
 
       - name: Generate todays article
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
-        run: npm run generate
+        run: node scripts/generate.mjs
 
       - name: Commit and push if changed
         run: |
