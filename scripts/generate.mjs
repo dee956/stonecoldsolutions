@@ -6,7 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { loadArticles, saveArticles, renderAll, slugify, displayDate } from "./lib.mjs";
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
 // Rotating themes so the blog covers a mix of business topics over time.
 const THEMES = [
@@ -32,6 +32,35 @@ function pickTheme() {
   return THEMES[day % THEMES.length];
 }
 
+// Structured tool so the model returns a guaranteed-valid object.
+// This avoids fragile JSON parsing of free-form text (unescaped quotes, etc.).
+const ARTICLE_TOOL = {
+  name: "publish_article",
+  description: "Publish one business-insights article to the Stone Cold Solutions blog.",
+  input_schema: {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        description: "Compelling title, under 80 characters, not in the recent list.",
+      },
+      tag: {
+        type: "string",
+        description: "ONE or TWO word category, e.g. Finance, Operations, Strategy, Marketing, HR, Technology, Expansion, Leadership.",
+      },
+      summary: {
+        type: "string",
+        description: "1-2 sentence plain-text teaser, under 240 characters, no HTML.",
+      },
+      bodyHtml: {
+        type: "string",
+        description: "Article body as clean HTML using p, h2, optional blockquote, ul/ol, li. No html, head, body, h1, or inline styles.",
+      },
+    },
+    required: ["title", "tag", "summary", "bodyHtml"],
+  },
+};
+
 async function main() {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error("Missing ANTHROPIC_API_KEY. Set it as a repository secret.");
@@ -56,34 +85,25 @@ Requirements:
 - Structure: a short intro paragraph, then 3-5 sections each with an <h2> heading, and a brief closing paragraph. You may use one <blockquote> and at most one <ul>/<ol> list if it genuinely helps.
 - Do NOT repeat any of these recent titles: ${recentTitles.length ? recentTitles.map(t => `"${t}"`).join(", ") : "(none yet)"}.
 
-Return ONLY a JSON object (no markdown fences, no commentary) with exactly these keys:
-{
-  "title": "string, compelling, under 80 characters, not in the recent list",
-  "tag": "ONE or TWO word category, e.g. Finance, Operations, Strategy, Marketing, HR, Technology, Expansion, Leadership",
-  "summary": "1-2 sentence plain-text teaser, under 240 characters, no HTML",
-  "bodyHtml": "the article body as clean HTML using <p>, <h2>, optional <blockquote>, <ul>/<ol>, <li>. No <html>, <head>, <body>, <h1>, or inline styles."
-}`;
+Call the publish_article tool with the finished article. Put the article body in bodyHtml as clean HTML (no <html>, <head>, <body>, <h1>, or inline styles).`;
 
   const resp = await client.messages.create({
     model: MODEL,
-    max_tokens: 2500,
+    max_tokens: 3000,
+    tools: [ARTICLE_TOOL],
+    tool_choice: { type: "tool", name: "publish_article" },
     messages: [{ role: "user", content: prompt }],
   });
 
-  const text = resp.content.map(b => (b.type === "text" ? b.text : "")).join("").trim();
-
-  let data;
-  try {
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    data = JSON.parse(text.slice(start, end + 1));
-  } catch (e) {
-    console.error("Could not parse model output as JSON:\n", text);
+  const block = resp.content.find(b => b.type === "tool_use");
+  if (!block || !block.input) {
+    console.error("Model did not return a publish_article tool call:\n", JSON.stringify(resp.content, null, 2));
     process.exit(1);
   }
+  const data = block.input;
 
   if (!data.title || !data.bodyHtml) {
-    console.error("Model output missing required fields.");
+    console.error("Model output missing required fields:\n", JSON.stringify(data, null, 2));
     process.exit(1);
   }
 
