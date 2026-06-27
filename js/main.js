@@ -44,6 +44,41 @@
     revealEls.forEach(function (el) { el.classList.add("in"); });
   }
 
+  /* ---- Latest insight on the home page ---- */
+  var contactSection = document.getElementById("contact");
+  var onHome = contactSection && location.pathname.indexOf("/insights/") === -1;
+  if (onHome) {
+    fetch("insights/articles.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (articles) {
+        if (!Array.isArray(articles) || !articles.length) return;
+        articles.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+        var a = articles[0];
+        var url = "insights/" + encodeURIComponent(a.slug) + ".html";
+        var card =
+          '<article class="post-card">' +
+          '<div class="post-meta"><span class="post-tag">' + esc(a.tag || "Business") + '</span>' +
+          '<span class="post-date">' + esc(a.dateDisplay || "") + '</span></div>' +
+          '<h2><a href="' + url + '">' + esc(a.title || "") + '</a></h2>' +
+          '<p>' + esc(a.summary || "") + '</p>' +
+          '<a href="' + url + '" class="read-more">Read article &rarr;</a>' +
+          '</article>';
+        var sec = document.createElement("section");
+        sec.className = "section section-alt";
+        sec.id = "insights-preview";
+        sec.innerHTML =
+          '<div class="container">' +
+          '<div class="section-head"><p class="eyebrow">Insights</p>' +
+          '<h2>Latest insight</h2></div>' +
+          '<div style="max-width:640px;margin:0 auto">' + card + '</div>' +
+          '<div style="text-align:center;margin-top:32px">' +
+          '<a href="insights/" class="btn btn-gold">View more</a></div>' +
+          '</div>';
+        contactSection.parentNode.insertBefore(sec, contactSection);
+      })
+      .catch(function () {});
+  }
+
   /* ---- Contact form ---- */
   var form = document.getElementById("contact-form");
   var status = document.getElementById("form-status");
@@ -98,5 +133,9 @@
   function val(id) {
     var el = document.getElementById(id);
     return el ? el.value.trim() : "";
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 })();
