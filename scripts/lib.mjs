@@ -73,6 +73,7 @@ function header(up) {
         <a href="${up}index.html#why">Why Choose Us</a>
         <a href="${up}index.html#process">Process</a>
         <a href="${up}insights/">Insights</a>
+        <a href="${up}invoice.html">Submit Invoice</a>
         <a href="${up}index.html#contact" class="btn btn-gold nav-cta">Contact Us</a>
       </nav>
       <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="main-nav">
@@ -94,6 +95,7 @@ function footer(up) {
         <a href="${up}index.html#why">Why Choose Us</a>
         <a href="${up}index.html#process">Process</a>
         <a href="${up}insights/">Insights</a>
+        <a href="${up}invoice.html">Submit Invoice</a>
         <a href="${up}index.html#contact">Contact</a>
       </nav>
       <div class="footer-contact">
