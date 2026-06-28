@@ -17,6 +17,9 @@
 
   <link rel="stylesheet" href="css/styles.css" />
 
+  <!-- Cloudflare Turnstile captcha -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
   <style>
     /* Invoice page specifics */
     .form-narrow { max-width: 660px; margin: 0 auto; }
@@ -31,6 +34,7 @@
       background: linear-gradient(135deg, var(--gold-light), var(--gold));
     }
     .req { color: var(--gold-dark); }
+    .captcha-row { margin: 6px 0 18px; }
     .form-note {
       display: flex; gap: 10px; align-items: flex-start;
       font-size: 0.86rem; color: var(--muted);
@@ -92,27 +96,18 @@
         <div class="contact-form-wrap">
           <!--
             INVOICE FORM
-            Posts to FormSubmit (https://formsubmit.co) so it works on a static host with no
-            backend. Submissions (including the attached file) are emailed to the address in
-            the form action. FormSubmit's reCAPTCHA is on by default for spam protection.
-
-            ONE-TIME ACTIVATION: the first time this form is submitted from the live domain,
-            FormSubmit emails Info@stonecoldsolutions.io a confirmation link. Click it once to
-            activate; after that, submissions are delivered automatically.
+            Posts to our own backend at /api/invoice (a small service on the same
+            DigitalOcean app). The service verifies the Cloudflare Turnstile captcha
+            and emails the submission (with the attached file) to Info@stonecoldsolutions.io.
           -->
-          <form action="https://formsubmit.co/Info@stonecoldsolutions.io"
-                method="POST" enctype="multipart/form-data">
+          <form id="invoice-form" action="/api/invoice" method="POST" enctype="multipart/form-data">
 
-            <!-- FormSubmit settings -->
-            <input type="hidden" name="_subject" value="New invoice submission — Stone Cold Solutions" />
-            <input type="hidden" name="_template" value="table" />
-            <input type="hidden" name="_next" value="https://stonecoldsolutions.io/invoice.html?submitted=true" />
             <!-- Honeypot: bots fill this, humans never see it -->
             <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
 
             <div class="field">
               <label for="company">Company name <span class="req">*</span></label>
-              <input type="text" id="company" name="Company Name" autocomplete="organization" required />
+              <input type="text" id="company" name="company" autocomplete="organization" required />
             </div>
 
             <div class="field">
@@ -122,18 +117,23 @@
 
             <div class="field">
               <label for="invoice">Invoice file <span class="req">*</span></label>
-              <input type="file" id="invoice" name="Invoice"
+              <input type="file" id="invoice" name="invoice"
                      accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp" required multiple />
               <p class="field-hint">PDF, Word, Excel, or image. You can attach more than one file — up to 10&nbsp;MB total.</p>
             </div>
 
             <div class="field">
               <label for="notes">Additional notes</label>
-              <textarea id="notes" name="Notes" rows="4"
+              <textarea id="notes" name="notes" rows="4"
                         placeholder="Anything we should know — PO number, due date, payment terms, etc."></textarea>
             </div>
 
-            <button type="submit" class="btn btn-gold btn-block">Submit invoice</button>
+            <div class="captcha-row">
+              <div class="cf-turnstile" data-sitekey="0x4AAAAAADsRZnQRgAVwXP2J"></div>
+            </div>
+
+            <button type="submit" class="btn btn-gold btn-block" id="invoice-submit">Submit invoice</button>
+            <p class="form-status" id="invoice-status" role="status" aria-live="polite"></p>
 
             <p class="form-note">
               <span aria-hidden="true">🔒</span>
@@ -175,18 +175,65 @@
 
   <script src="js/main.js"></script>
   <script>
-    // Show a success banner when FormSubmit redirects back after a submission.
+    // Invoice form: AJAX submit to our own /api/invoice (keeps the visitor on-page).
     (function () {
-      try {
-        var params = new URLSearchParams(window.location.search);
-        if (params.get("submitted") === "true") {
-          var banner = document.getElementById("form-success");
-          if (banner) {
-            banner.classList.add("show");
-            banner.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
+      var form = document.getElementById("invoice-form");
+      var statusEl = document.getElementById("invoice-status");
+      var successEl = document.getElementById("form-success");
+      var submitBtn = document.getElementById("invoice-submit");
+      if (!form) return;
+
+      function setStatus(msg, type) {
+        if (!statusEl) return;
+        statusEl.textContent = msg || "";
+        statusEl.className = "form-status" + (type ? " " + type : "");
+      }
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+
+        // Require the captcha to be completed.
+        var token = form.querySelector('[name="cf-turnstile-response"]');
+        if (!token || !token.value) {
+          setStatus("Please complete the captcha to continue.", "err");
+          return;
         }
-      } catch (e) {}
+
+        setStatus("Sending…", "");
+        if (submitBtn) submitBtn.disabled = true;
+
+        var data = new FormData(form);
+        fetch(form.getAttribute("action"), {
+          method: "POST",
+          body: data,
+          headers: { Accept: "application/json" }
+        })
+          .then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (body) {
+              return { ok: res.ok, body: body };
+            });
+          })
+          .then(function (r) {
+            if (r.ok && r.body && r.body.ok) {
+              form.reset();
+              if (window.turnstile) { try { window.turnstile.reset(); } catch (e) {} }
+              setStatus("", "");
+              if (successEl) {
+                successEl.classList.add("show");
+                successEl.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+            } else {
+              setStatus((r.body && r.body.error) || "Something went wrong. Please try again, or email Info@stonecoldsolutions.io.", "err");
+              if (window.turnstile) { try { window.turnstile.reset(); } catch (e) {} }
+            }
+          })
+          .catch(function () {
+            setStatus("Something went wrong. Please try again, or email Info@stonecoldsolutions.io directly.", "err");
+          })
+          .finally(function () {
+            if (submitBtn) submitBtn.disabled = false;
+          });
+      });
     })();
   </script>
 </body>
